@@ -6,7 +6,7 @@ from env_wrapper import FrameSkip, ActionScale, OfficialObs, RewardShaping
 
 mode = '2D'
 difficulty = 1  # 0 for collecting data; 1 or 2 for round 1
-visualize = True
+visualize = False
 seed = None
 sim_dt = 0.01
 sim_t = 100
@@ -28,13 +28,13 @@ INIT_POSE = np.array([
     -1.745329251994329478e-01])  # ankle flex
 
 if mode is '2D':
-    params = np.loadtxt('params_2D_init.txt')
+    params = np.loadtxt('../params_2D_init.txt')
 elif mode is '3D':
-    params = np.loadtxt('params_3D_init.txt')
+    params = np.loadtxt('../params_3D_init.txt')
 
 locoCtrl = OsimReflexCtrl(mode=mode, dt=sim_dt)
 env = L2M2019Env(visualize=visualize, seed=seed, difficulty=difficulty)
-env.change_model(model=mode, difficulty=difficulty, seed=seed)
+env.change_model(model=mode, seed=seed)
 max_time_limit = env.time_limit
 print('max_time_limit:', max_time_limit)
 
@@ -79,7 +79,8 @@ def collect_memory(file_name):
 
 def test_property():
     total_reward, t, count = 0, 0, 0
-    v = np.array([])
+    joint_angle = np.array([])
+    activation = np.array([])
     obs_dict = env.reset(project=False, obs_as_dict=True, init_pose=INIT_POSE)
     while True:  # run an episode
         count += 1
@@ -90,18 +91,32 @@ def test_property():
         obs_dict, reward, done, info = env.step(action, project=False, obs_as_dict=True)
         total_reward += reward
 
-        v = np.append(v, obs_dict['l_leg']['joint']['hip_abd'])
+        joint_angle = np.append(joint_angle, obs_dict['r_leg']['joint']['knee'])
+        activation = np.append(activation, action[3]) # 2: HFL_r; 3: GLU_r
 
         # print('l_grf:', obs_dict['l_leg']['ground_reaction_forces'])
         # print('r_grf:', obs_dict['r_leg']['ground_reaction_forces'])
         # input()
 
-        if done:
+        if done or t >= sim_dt * 300:
             break
-    print('score={:.4f} step={}, time={}sec'.format(total_reward, count, t))
-    plt.plot(v)
+
+    print('score={:.2f} step={}, time={:.2f}sec'.format(total_reward, count, t))
+    plt.figure()
+    plt.xlabel('Timestep')
+    plt.title('GLU')
+
+    # plt.plot(joint_angle)
+    # plt.ylabel('Angle [rad]')
+
+    plt.plot(activation)
+    plt.ylabel('Muscle Activation')
+
     plt.show()
 
+def main():
+    # collect_memory('replay_buffer')
+    test_property()
 
-# collect_memory('replay_buffer')
-test_property()
+if __name__ == "__main__":
+    main()

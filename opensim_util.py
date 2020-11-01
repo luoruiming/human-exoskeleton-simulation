@@ -233,6 +233,23 @@ def load_cmc(filename):  # load gait14dof22musc_walk1_states.sto and subsample a
         print('nRows:', mat.shape[0], '\tnColumns:', mat.shape[1])
         return mat, title_idx
 
+def print_activation_cmc(filename, muscle_name):  # load gait14dof22musc_walk1_states.sto and print certain muscle's value
+    with open(filename, 'r') as f:
+        for _ in range(6):
+            f.readline()
+
+        titles = f.readline().split()
+        idx = titles.index('/forceset/' + muscle_name + '/activation')
+
+        data_list = f.readlines()
+        res = []
+        for line in data_list:
+            row_list = line.split('\t')
+            if 0.03 <= eval(row_list[0]) <= 1.41:
+                if math.modf(eval(row_list[0]) * 100)[0] <= 0.001 or math.modf(eval(row_list[0]) * 100)[0] >= 0.999:
+                    res.append(eval(row_list[idx]))
+                    
+        return res
 
 def get_ref_traj(cmc_file, grf_file, muscle_file):
     grf_mat, grf_title_idx = load_grf(grf_file)
@@ -276,8 +293,15 @@ def get_ref_traj(cmc_file, grf_file, muscle_file):
 
 def main():
     # lowpass_grf('subject01_walk1_grf.mot', 600, 'subject01_walk1_grf_filtered.mot')  # 600Hz lowpass
-    get_ref_traj('gait14dof22musc_walk1_states.sto', 'subject01_walk1_grf_filtered.mot', 'gait14dof22musc_walk1_Actuation_force.sto')
+    # get_ref_traj('gait14dof22musc_walk1_states.sto', 'subject01_walk1_grf_filtered.mot', 'gait14dof22musc_walk1_Actuation_force.sto')
+    add_r = print_activation_cmc('gait14dof22musc_walk1_states.sto', 'add_r')
 
+    plt.figure()
+    plt.title('ADD')
+    plt.xlabel('Timestep')
+    plt.ylabel('Muscle Activation')
+    plt.plot(add_r)
+    plt.show()
 
 if __name__ == '__main__':
     main()

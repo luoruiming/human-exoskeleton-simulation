@@ -11,10 +11,10 @@
 import numpy as np
 from osim.env import L2M2019Env
 import torch
+import scipy
 import argparse
 from collections import deque
 from ddpg_agent import Agent, ReplayBuffer
-import matplotlib.pyplot as plt
 from env_wrapper import FrameSkip, ActionScale, OfficialObs, RewardShaping
 from opensim_util import *
 
@@ -32,10 +32,8 @@ INIT_POSE = np.array([
     -8.041966456860847323e-01,   # knee extend
     -1.745329251994329478e-01])  # ankle flex
 
-TEST_MODE = False
-
 # load the environment
-env = L2M2019Env(difficulty=0, visualize=TEST_MODE)
+env = L2M2019Env(difficulty=1, visualize=False)
 env.change_model(model='2D')
 max_time_limit = env.time_limit
 print('max_time_limit:', max_time_limit)
@@ -140,8 +138,8 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=200.0, print_every=
 
         if highest_score < np.mean(scores_window):
             highest_score = np.mean(scores_window)
-            torch.save(agent.actor_local.state_dict(), 'saved_weights/checkpoint_actor.pth')
-            torch.save(agent.critic_local.state_dict(), 'saved_weights/checkpoint_critic.pth')
+            torch.save(agent.actor_local.state_dict(), '../saved_weights/checkpoint_actor.pth')
+            torch.save(agent.critic_local.state_dict(), '../saved_weights/checkpoint_critic.pth')
             print('\nNetwork saved!')
 
         if i_episode % print_every == 0:
@@ -154,15 +152,14 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=200.0, print_every=
     return scores_res
 
 
-# if args.train:
-if TEST_MODE is False:
+if args.train:
     # env = FrameSkip(env)  # frame-skip
 
     # # load the saved weights
     # agent.restore('saved_weights')
 
     # print('Successfully load memory!')
-    ref_traj = np.load('reference_trajectory.npy')
+    ref_traj = np.load('../reference_trajectory.npy')
     print('Successfully load reference trajectory!')
 
     # load pre-collected memory
@@ -181,24 +178,37 @@ if TEST_MODE is False:
     plt.savefig('pic/reward_curve.png')
     plt.show()
 
-#elif args.test:
-else:
+elif args.test:
     # load the saved weights
-    agent.actor_local.load_state_dict(torch.load('saved_weights/checkpoint_actor.pth', map_location='cpu'))
-    agent.critic_local.load_state_dict(torch.load('saved_weights/checkpoint_critic.pth', map_location='cpu'))
+    agent.actor_local.load_state_dict(torch.load('../saved_weights/checkpoint_actor.pth', map_location='cpu'))
+    agent.critic_local.load_state_dict(torch.load('../saved_weights/checkpoint_critic.pth', map_location='cpu'))
     print('Successfully load network weights!')
 
     state = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)
     scores = 0
 
+    activation = np.array([])
+    # muscle order in action:
+    #    HAB, HAD, HFL, GLU, HAM, RF, VAS, BFSH, GAS, SOL, TA 
+
     for i in range(max_time_limit):
         action = agent.act(state, add_noise=False)
         action = np.squeeze(action)
+        action_plot = (action + 1) / 2
+        activation = np.append(activation, action_plot[1]) # 1:ADD, 2:HFL
         state_, r, done, _ = env.step(action, project=False, obs_as_dict=False)
         scores += r
         state = state_
         if done:
             print('Total score: {:.2f}\tStep:{}'.format(scores, i))
             break
+
+    plt.figure()
+    activation_ = scipy.signal.savgol_filter(activation,11,3)
+    plt.plot(activation_)
+    plt.title('ADD')
+    plt.xlabel('Timestep')
+    plt.ylabel('Muscle Activation')
+    plt.show()
 
 env.close()
