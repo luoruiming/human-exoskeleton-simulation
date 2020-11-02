@@ -35,7 +35,7 @@ INIT_POSE = np.array([
 # load the environment
 env = L2M2019Env(difficulty=1, visualize=False)
 env.change_model(model='2D')
-max_time_limit = env.time_limit
+max_time_limit = 139  # or env.time_limit
 print('max_time_limit:', max_time_limit)
 
 # apply RL tricks
@@ -112,42 +112,41 @@ def collect_frames(n_frame, ref_traj):
                 break
 
 
-def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=200.0, print_every=50, ref_traj=None):
+def ddpg(n_episodes=1000, max_t=max_time_limit, solved_score=100.0, print_every=50, ref_traj=None):
     scores_window = deque(maxlen=print_every)
     scores_res = []
     highest_score = -float('inf')
     for i_episode in range(1, n_episodes+1):
         state = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)     # reset the environment
-        score = 0                                                                    # initialize the score
+        score, ts = 0, 0                                                             # initialize the score
         agent.reset()
-        for t in range(max_t):
+        while ts < max_time_limit:
             action = agent.act(state, add_noise=True)                                # select an action
             action = np.squeeze(action)
             state_, r, done, _ = env.step(action, project=False, obs_as_dict=True)   # send action to environment
-            shaped_r = r if ref_traj is None else reward_shaping(state_, ref_traj[t])
+            shaped_r = r if ref_traj is None else reward_shaping(state_, ref_traj[ts])
             state_ = env.get_observation_from_dict(state_)
             agent.step(state, action, shaped_r, state_)                              # accumulate an experiment and learn a step
             score += shaped_r                                                        # update the score
             state = state_                                                           # roll over states to next time step
             if done:                                                                 # exit loop if episode finished
-                print('\tt:', t)
                 break
         scores_window.append(score)
         scores_res.append(score)
-        print('\rEpisode {}\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)), end="")
+        print('\tEpisode {}\tTimestep:{}\tAverage Score: {:.2f}'.format(i_episode, ts, np.mean(scores_window)))
 
         if highest_score < np.mean(scores_window):
             highest_score = np.mean(scores_window)
-            torch.save(agent.actor_local.state_dict(), '../saved_weights/checkpoint_actor.pth')
-            torch.save(agent.critic_local.state_dict(), '../saved_weights/checkpoint_critic.pth')
-            print('\nNetwork saved!')
+            torch.save(agent.actor_local.state_dict(), 'saved_weights/checkpoint_actor.pth')
+            torch.save(agent.critic_local.state_dict(), 'saved_weights/checkpoint_critic.pth')
+            print('Networks saved!')
 
         if i_episode % print_every == 0:
             np.save('scores_res.npy', scores_res)
-            print('\nscore saved!')
+            print('scores saved!')
             # print('\rEpisode {}\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
         if np.mean(scores_window) >= solved_score:
-            print('\nEnvironment solved in {} episodes!\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
+            print('Environment solved in {} episodes!\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
             break
     return scores_res
 
@@ -174,7 +173,7 @@ if args.train:
     ax = fig.add_subplot(111)
     plt.plot(np.arange(len(train_scores)), train_scores)
     plt.ylabel('Score')
-    plt.xlabel('Episode #')
+    plt.xlabel('Episode')
     plt.savefig('pic/reward_curve.png')
     plt.show()
 

@@ -9,7 +9,7 @@ difficulty = 1  # 0 for collecting data; 1 or 2 for round 1
 visualize = False
 seed = None
 sim_dt = 0.01
-sim_t = 100
+sim_t = 10  # unit: second
 timstep_limit = int(round(sim_t/sim_dt))
 MEMORY_SIZE = int(1e4)
 
@@ -79,38 +79,33 @@ def collect_memory(file_name):
 
 def test_property():
     total_reward, t, count = 0, 0, 0
+    done = False
     joint_angle = np.array([])
     activation = np.array([])
     obs_dict = env.reset(project=False, obs_as_dict=True, init_pose=INIT_POSE)
-    while True:  # run an episode
+    while done is False and count < 300:  # run an episode
         count += 1
         t += sim_dt
 
         locoCtrl.set_control_params(params)
         action = locoCtrl.update(obs_dict)
         obs_dict, reward, done, info = env.step(action, project=False, obs_as_dict=True)
+        print('timestep:{} reward:{}'.format(count, reward))
         total_reward += reward
 
-        joint_angle = np.append(joint_angle, obs_dict['r_leg']['joint']['knee'])
+        joint_angle = np.append(joint_angle, obs_dict['r_leg']['joint']['hip'])
         activation = np.append(activation, action[3]) # 2: HFL_r; 3: GLU_r
-
-        # print('l_grf:', obs_dict['l_leg']['ground_reaction_forces'])
-        # print('r_grf:', obs_dict['r_leg']['ground_reaction_forces'])
-        # input()
-
-        if done or t >= sim_dt * 300:
-            break
 
     print('score={:.2f} step={}, time={:.2f}sec'.format(total_reward, count, t))
     plt.figure()
     plt.xlabel('Timestep')
-    plt.title('GLU')
+    plt.title('Right Hip')
 
-    # plt.plot(joint_angle)
-    # plt.ylabel('Angle [rad]')
+    plt.plot(joint_angle)
+    plt.ylabel('Angle [rad]')
 
-    plt.plot(activation)
-    plt.ylabel('Muscle Activation')
+    # plt.plot(activation)
+    # plt.ylabel('Muscle Activation')
 
     plt.show()
 
