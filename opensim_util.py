@@ -36,14 +36,14 @@ def reward_shaping(state_, ref_traj):
     angle_err.append(ref_traj[state_idx['knee_angle_l']] - state_['l_leg']['joint']['knee'])
     angle_err.append(ref_traj[state_idx['ankle_angle_l']] - state_['l_leg']['joint']['ankle'])
 
-    angle_vel_err.append(ref_traj[state_idx['hip_flexion_r_v']] - state_['r_leg']['joint']['hip'])
-    angle_vel_err.append(ref_traj[state_idx['hip_adduction_r_v']] - state_['r_leg']['joint']['hip_abd'])
-    angle_vel_err.append(ref_traj[state_idx['knee_angle_r_v']] - state_['r_leg']['joint']['knee'])
-    angle_vel_err.append(ref_traj[state_idx['ankle_angle_r_v']] - state_['r_leg']['joint']['ankle'])
-    angle_vel_err.append(ref_traj[state_idx['hip_flexion_l_v']] - state_['l_leg']['joint']['hip'])
-    angle_vel_err.append(ref_traj[state_idx['hip_adduction_l_v']] - state_['l_leg']['joint']['hip_abd'])
-    angle_vel_err.append(ref_traj[state_idx['knee_angle_l_v']] - state_['l_leg']['joint']['knee'])
-    angle_vel_err.append(ref_traj[state_idx['ankle_angle_l_v']] - state_['l_leg']['joint']['ankle'])
+    angle_vel_err.append(ref_traj[state_idx['hip_flexion_r_v']] - state_['r_leg']['d_joint']['hip'])
+    angle_vel_err.append(ref_traj[state_idx['hip_adduction_r_v']] - state_['r_leg']['d_joint']['hip_abd'])
+    angle_vel_err.append(ref_traj[state_idx['knee_angle_r_v']] - state_['r_leg']['d_joint']['knee'])
+    angle_vel_err.append(ref_traj[state_idx['ankle_angle_r_v']] - state_['r_leg']['d_joint']['ankle'])
+    angle_vel_err.append(ref_traj[state_idx['hip_flexion_l_v']] - state_['l_leg']['d_joint']['hip'])
+    angle_vel_err.append(ref_traj[state_idx['hip_adduction_l_v']] - state_['l_leg']['d_joint']['hip_abd'])
+    angle_vel_err.append(ref_traj[state_idx['knee_angle_l_v']] - state_['l_leg']['d_joint']['knee'])
+    angle_vel_err.append(ref_traj[state_idx['ankle_angle_l_v']] - state_['l_leg']['d_joint']['ankle'])
 
     force_err.append(ref_traj[state_idx['abd_r_f']] - state_['r_leg']['HAB']['f'])
     force_err.append(ref_traj[state_idx['add_r_f']] - state_['r_leg']['HAD']['f'])
@@ -94,10 +94,10 @@ def reward_shaping(state_, ref_traj):
     grf_err.append(ref_traj[state_idx['ground_force_1_vy']] - state_['l_leg']['ground_reaction_forces'][2])
     grf_err.append(ref_traj[state_idx['ground_force_2_vy']] - state_['r_leg']['ground_reaction_forces'][2])
 
-    r_mocap, r_internal = 0, 0
-    r_mocap += w_angle * np.exp(-np.linalg.norm(angle_err))
-    r_mocap += w_angle_vel * np.exp(-np.linalg.norm(angle_vel_err))
-    r_mocap += w_grf * np.exp(-np.linalg.norm(grf_err))
+    r_external, r_internal = 0, 0
+    r_external += w_angle * np.exp(-np.linalg.norm(angle_err))
+    r_external += w_angle_vel * np.exp(-np.linalg.norm(angle_vel_err))
+    r_external += w_grf * np.exp(-np.linalg.norm(grf_err))
 
     r_internal += w_force * np.exp(-np.linalg.norm(force_err))
     r_internal += w_fiber * np.exp(-np.linalg.norm(fiber_err))
@@ -105,7 +105,7 @@ def reward_shaping(state_, ref_traj):
 
     # print(np.linalg.norm(pelvis_err), np.linalg.norm(angle_err), np.linalg.norm(angle_vel_err),
     # np.linalg.norm(activation_err), np.linalg.norm(fiber_err), np.linalg.norm(grf_err), 'r=', r)
-    return 0.5 * r_mocap + 0.5 * r_internal
+    return 0.5 * r_external + 0.5 * r_internal
 
 
 def lowpass_grf(original_file, fe, output_file):
