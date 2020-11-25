@@ -12,7 +12,7 @@ OBS_DIM = 98  # state space
 
 BUFFER_SIZE = int(1e6)
 BATCH_SIZE = 128        # batch size for training neural networks
-GAMMA = 0.96            # update coefficient in Bellman equation
+GAMMA = 1.0             # update coefficient in Bellman equation
 TAU = 0.001             # soft update coefficient
 LR_ACTOR = 3e-5
 LR_CRITIC = 3e-5

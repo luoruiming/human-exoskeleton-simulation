@@ -18,10 +18,10 @@ state_idx = {'pelvis_speed': 0, 'pelvis_tilt': 1, 'pelvis_ty': 2, 'hip_flexion_r
 
 def reward_shaping(state_, ref_traj):
     pelvis_err, angle_err, angle_vel_err, force_err, fiber_err, grf_err = [], [], [], [], [], []
-    w_angle, w_angle_vel, w_grf = 0.4, 0.3, 0.3
-    w_force, w_fiber, w_pelvis = 0.3, 0.3, 0.4
+    w_angle, w_angle_vel, w_pelvis = 0.4, 0.3, 0.3
+    w_force, w_fiber, w_grf = 0.3, 0.3, 0.4
 
-    assert w_angle + w_angle_vel + w_grf == 1.0 and w_force + w_fiber + w_pelvis == 1.0
+    assert w_angle + w_angle_vel + w_pelvis == 1.0 and w_force + w_fiber + w_grf == 1.0
 
     pelvis_err.append(ref_traj[state_idx['pelvis_speed']] - state_['pelvis']['vel'][0])
     pelvis_err.append(ref_traj[state_idx['pelvis_tilt']] - state_['pelvis']['pitch'])
@@ -94,18 +94,18 @@ def reward_shaping(state_, ref_traj):
     grf_err.append(ref_traj[state_idx['ground_force_1_vy']] - state_['l_leg']['ground_reaction_forces'][2])
     grf_err.append(ref_traj[state_idx['ground_force_2_vy']] - state_['r_leg']['ground_reaction_forces'][2])
 
-    r_external, r_internal = 0, 0
-    r_external += w_angle * np.exp(-np.linalg.norm(angle_err))
-    r_external += w_angle_vel * np.exp(-np.linalg.norm(angle_vel_err))
-    r_external += w_grf * np.exp(-np.linalg.norm(grf_err))
+    r_kinematic, r_dynamic = 0, 0
+    r_kinematic += w_angle * np.exp(-np.linalg.norm(angle_err))
+    r_kinematic += w_angle_vel * np.exp(-np.linalg.norm(angle_vel_err))
+    r_kinematic += w_pelvis * np.exp(-np.linalg.norm(pelvis_err))
 
-    r_internal += w_force * np.exp(-np.linalg.norm(force_err))
-    r_internal += w_fiber * np.exp(-np.linalg.norm(fiber_err))
-    r_internal += w_pelvis * np.exp(-np.linalg.norm(pelvis_err))
+    r_dynamic += w_force * np.exp(-np.linalg.norm(force_err))
+    r_dynamic += w_fiber * np.exp(-np.linalg.norm(fiber_err))
+    r_dynamic += w_grf * np.exp(-np.linalg.norm(grf_err))
 
     # print(np.linalg.norm(pelvis_err), np.linalg.norm(angle_err), np.linalg.norm(angle_vel_err),
     # np.linalg.norm(activation_err), np.linalg.norm(fiber_err), np.linalg.norm(grf_err), 'r=', r)
-    return 0.5 * r_external + 0.5 * r_internal
+    return 0.5 * r_kinematic + 0.5 * r_dynamic
 
 
 def lowpass_grf(original_file, fe, output_file):

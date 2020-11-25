@@ -9,12 +9,13 @@
 """
 
 import numpy as np
-from osim.env import L2M2019Env
 import torch
 import scipy
 import argparse
 from collections import deque
+
 from ddpg_agent import Agent, ReplayBuffer
+from osim.env import L2M2019Env
 from env_wrapper import FrameSkip, ActionScale, OfficialObs, RewardShaping
 from opensim_util import *
 
@@ -112,11 +113,11 @@ def collect_frames(n_frame, ref_traj):
                 break
 
 
-def ddpg(n_episodes=1000, max_t=max_time_limit, solved_score=100.0, print_every=50, ref_traj=None):
+def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=50, ref_traj=None):
     scores_window = deque(maxlen=print_every)
     scores_res = []
     highest_score = -float('inf')
-    for i_episode in range(1, n_episodes+1):
+    for i_episode in range(1, n_episodes + 1):
         state = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)     # reset the environment
         score, ts = 0, 0                                                             # initialize the score
         agent.reset()
@@ -131,9 +132,10 @@ def ddpg(n_episodes=1000, max_t=max_time_limit, solved_score=100.0, print_every=
             state = state_                                                           # roll over states to next time step
             if done:                                                                 # exit loop if episode finished
                 break
+            ts += 1
         scores_window.append(score)
         scores_res.append(score)
-        print('\tEpisode {}\tTimestep:{}\tAverage Score: {:.2f}'.format(i_episode, ts, np.mean(scores_window)))
+        print('Episode {}\tTimestep:{}\tAverage Score: {:.2f}'.format(i_episode, ts, np.mean(scores_window)))
 
         if highest_score < np.mean(scores_window):
             highest_score = np.mean(scores_window)
