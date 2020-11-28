@@ -28,6 +28,7 @@ color2num = dict(
     crimson=38
 )
 
+
 def colorize(string, color, bold=False, highlight=False):
     """
     Colorize a string.
@@ -40,6 +41,7 @@ def colorize(string, color, bold=False, highlight=False):
     attr.append(str(num))
     if bold: attr.append('1')
     return '\x1b[%sm%s\x1b[0m' % (';'.join(attr), string)
+
 
 def restore_tf_graph(sess, fpath):
     """
@@ -67,6 +69,7 @@ def restore_tf_graph(sess, fpath):
     model.update({k: graph.get_tensor_by_name(v) for k, v in model_info['inputs'].items()})
     model.update({k: graph.get_tensor_by_name(v) for k, v in model_info['outputs'].items()})
     return model
+
 
 class Logger:
     """
@@ -230,7 +233,6 @@ class Logger:
             tf.saved_model.simple_save(export_dir=fpath, **self.tf_saver_elements)
             joblib.dump(self.tf_saver_info, osp.join(fpath, 'model_info.pkl'))
 
-
     def setup_pytorch_saver(self, what_to_save):
         """
         Set up easy model saving for a single PyTorch model.
@@ -270,7 +272,6 @@ class Logger:
                 # We use a catch_warnings() context to avoid the warnings about
                 # not being able to save the source code.
                 torch.save(self.pytorch_saver_elements, fname)
-
 
     def dump_tabular(self):
         """

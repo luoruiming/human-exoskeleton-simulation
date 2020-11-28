@@ -8,6 +8,20 @@ from utils.logx import EpochLogger
 from utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
 from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
 
+INIT_POSE = np.array([
+    1.699999999999999956e+00,    # forward speed
+    .5,                          # rightward speed
+    9.023245653983965608e-01,    # pelvis height
+    2.012303881285582852e-01,    # trunk lean
+    0 * np.pi / 180,             # [right] hip adduct
+    -6.952390849304798115e-01,   # hip flex
+    -3.231075259785813891e-01,   # knee extend
+    1.709011708233401095e-01,    # ankle flex
+    0 * np.pi / 180,             # [left] hip adduct
+    -5.282323914341899296e-02,   # hip flex
+    -8.041966456860847323e-01,   # knee extend
+    -1.745329251994329478e-01])  # ankle flex
+
 
 class PPOBuffer:
     """
@@ -84,8 +98,8 @@ class PPOBuffer:
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in data.items()}
 
 
-def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=40, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
+def ppo(env, obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+        steps_per_epoch=140, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lamb=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
 
@@ -101,13 +115,8 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    # Instantiate environment
-    env = env_fn()
-    obs_dim = env.observation_space.shape
-    act_dim = env.action_space.shape
-
     # Create actor-critic module
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
 
     # Sync params across processes
     sync_params(ac)
@@ -189,14 +198,14 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, ep_ret, ep_len = env.reset(), 0, 0
+    o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
     for epoch in range(epochs):
         for t in range(local_steps_per_epoch):
             a, v, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
 
-            next_o, r, d, _ = env.step(a)
+            next_o, r, d, _ = env.step(a, project=False, obs_as_dict=True)
             ep_ret += r
             ep_len += 1
 
@@ -269,7 +278,7 @@ if __name__ == '__main__':
     from utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
 
-    ppo(lambda: gym.make(args.env), actor_critic=core.MLPActorCritic,
+    ppo(env, obs_dim, act_dim, actor_critic=core.MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[args.hidden] * args.layer), gamma=args.gamma,
         seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs,
         logger_kwargs=logger_kwargs)

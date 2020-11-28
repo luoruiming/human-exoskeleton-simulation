@@ -25,6 +25,7 @@ def convert_json(obj):
 
         return str(obj)
 
+
 def is_json_serializable(v):
     try:
         json.dumps(v)
