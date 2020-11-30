@@ -23,7 +23,7 @@ from env_wrapper import FrameSkip, ActionScale, OfficialObs, RewardShaping
 from opensim_util import *
 
 import core
-from ppo import PPOBuffer, ppo
+from ppo import PPOBuffer
 from utils.logx import EpochLogger
 from utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
 from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
@@ -164,8 +164,8 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=
 
 
 def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=140, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=10, train_v_iters=10, lamb=0.97, max_ep_len=139,
+        steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
+        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lamb=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -278,7 +278,7 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
             buffer.store(o, a, r, v, logp)
             logger.store(VVals=v)
 
-            # Update obs (critical!)
+            # Update obs
             o = next_o
 
             timeout = ep_len == max_ep_len
@@ -291,7 +291,7 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
                 # if trajectory didn't reach terminal state, bootstrap value target
                 if timeout or epoch_ended:
                      _, v, _ = ac.step(torch.as_tensor(o, dtype=torch.float32))
-                else:
+                else:  # terminal
                     v = 0
                 buffer.finish_path(v)
                 if terminal:
@@ -340,7 +340,7 @@ if args.train:
     # train the agent with DDPG and save the result
     # train_scores = ddpg(max_t=max_time_limit, ref_traj=ref_traj)
 
-    # mpi_fork(4)  # run parallel code with mpi
+    mpi_fork(4)  # run parallel code with mpi
     from utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs('ppo', 0)
     ppo(obs_dim=state_size,
@@ -349,9 +349,9 @@ if args.train:
         ac_kwargs=dict(hidden_sizes=[64] * 2),
         gamma=0.99,
         seed=0,
-        steps_per_epoch=140,
-        epochs=50,
-        max_ep_len=139,
+        steps_per_epoch=1000,
+        epochs=1000,
+        max_ep_len=400,
         logger_kwargs=logger_kwargs)
     np.save("train_scores.npy", train_scores)
 
