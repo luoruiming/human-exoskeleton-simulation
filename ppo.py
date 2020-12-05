@@ -100,7 +100,7 @@ class PPOBuffer:
 
 def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
+        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lamb=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
     """
     Proximal Policy Optimization (by clipping),
@@ -168,7 +168,7 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             to take fewer than this.)
         train_v_iters (int): Number of gradient descent steps to take on
             value function per epoch.
-        lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
+        lamb (float): Lambda for GAE-Lambda. (Always between 0 and 1,
             close to 1.)
         max_ep_len (int): Maximum length of trajectory / episode / rollout.
         target_kl (float): Roughly what KL divergence we think is appropriate
@@ -208,7 +208,7 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Set up experience buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam)
+    buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lamb)
 
     # Set up function for computing PPO policy loss
     def compute_loss_pi(data):

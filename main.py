@@ -164,9 +164,9 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=
 
 
 def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lamb=0.97, max_ep_len=1000,
-        target_kl=0.01, logger_kwargs=dict(), save_freq=10):
+        steps_per_epoch=6144, epochs=1, gamma=0.95, clip_ratio=0.2, pi_lr=3e-4,
+        vf_lr=1e-3, train_pi_iters=10, train_v_iters=10, lamb=0.95, max_ep_len=1000,
+        target_kl=0.01, logger_kwargs=dict(), save_freq=50):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -266,7 +266,9 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
     o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
-    for epoch in range(epochs):
+    epoch = 0
+    while True:
+        # collect #local_steps_per_epoch experience samples
         for t in range(local_steps_per_epoch):
             a, v, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
 
@@ -300,7 +302,7 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
                 o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
 
         # Save model
-        if (epoch % save_freq == 0) or (epoch == epochs - 1):
+        if epoch % save_freq == 0:
             logger.save_state({'env': env}, None)
 
         # Perform PPO update
@@ -320,8 +322,10 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
         logger.log_tabular('StopIter', average_only=True)
-        logger.log_tabular('Time', time.time() - start_time)
+        logger.log_tabular('Time', (time.time() - start_time) / 3600)
         logger.dump_tabular()
+
+        epoch += 1
 
 
 if args.train:
@@ -340,18 +344,19 @@ if args.train:
     # train the agent with DDPG and save the result
     # train_scores = ddpg(max_t=max_time_limit, ref_traj=ref_traj)
 
-    mpi_fork(4)  # run parallel code with mpi
+    mpi_fork(8)  # run parallel code with mpi
     from utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs('ppo', 0)
+    logger_kwargs = setup_logger_kwargs('ppo', 1)
     ppo(obs_dim=state_size,
         act_dim=action_size,
         actor_critic=core.MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[64] * 2),
-        gamma=0.99,
+        ac_kwargs=dict(hidden_sizes=[1024] * 2),
+        gamma=0.95,
+        lamb=0.95,
         seed=0,
-        steps_per_epoch=1000,
-        epochs=1000,
-        max_ep_len=400,
+        steps_per_epoch=6144,
+        epochs=1,
+        max_ep_len=139,
         logger_kwargs=logger_kwargs)
     np.save("train_scores.npy", train_scores)
 
