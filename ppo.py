@@ -3,24 +3,10 @@ import torch
 from torch.optim import Adam
 import gym
 import time
-import core
+import ppo_core
 from utils.logx import EpochLogger
 from utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
 from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
-
-INIT_POSE = np.array([
-    1.699999999999999956e+00,    # forward speed
-    .5,                          # rightward speed
-    9.023245653983965608e-01,    # pelvis height
-    2.012303881285582852e-01,    # trunk lean
-    0 * np.pi / 180,             # [right] hip adduct
-    -6.952390849304798115e-01,   # hip flex
-    -3.231075259785813891e-01,   # knee extend
-    1.709011708233401095e-01,    # ankle flex
-    0 * np.pi / 180,             # [left] hip adduct
-    -5.282323914341899296e-02,   # hip flex
-    -8.041966456860847323e-01,   # knee extend
-    -1.745329251994329478e-01])  # ankle flex
 
 
 class PPOBuffer:
@@ -31,8 +17,8 @@ class PPOBuffer:
     """
 
     def __init__(self, obs_dim, act_dim, size, gamma=0.99, lamb=0.95):
-        self.obs_buffer = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buffer = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
+        self.obs_buffer = np.zeros(ppo_core.combined_shape(size, obs_dim), dtype=np.float32)
+        self.act_buffer = np.zeros(ppo_core.combined_shape(size, act_dim), dtype=np.float32)
         self.adv_buffer = np.zeros(size, dtype=np.float32)
         self.rew_buffer = np.zeros(size, dtype=np.float32)
         self.ret_buffer = np.zeros(size, dtype=np.float32)
@@ -75,10 +61,10 @@ class PPOBuffer:
 
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buffer[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lamb)
+        self.adv_buffer[path_slice] = ppo_core.discount_cumsum(deltas, self.gamma * self.lamb)
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buffer[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        self.ret_buffer[path_slice] = ppo_core.discount_cumsum(rews, self.gamma)[:-1]
 
         self.path_start_idx = self.ptr
 
@@ -98,8 +84,8 @@ class PPOBuffer:
         return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in data.items()}
 
 
-def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=4000, epochs=50, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
+def ppo(env_fn, actor_critic=ppo_core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+        steps_per_epoch=4000, epochs=1, gamma=0.99, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, lamb=0.97, max_ep_len=1000,
         target_kl=0.01, logger_kwargs=dict(), save_freq=10):
     """

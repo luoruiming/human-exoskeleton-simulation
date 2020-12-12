@@ -17,8 +17,8 @@ def combined_shape(length, shape=None):
 def mlp(sizes, activation, output_activation=nn.Identity):
     layers = []
     for j in range(len(sizes) - 1):
-        act = activation if j < len(sizes) - 2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+        activate = activation if j < len(sizes) - 2 else output_activation
+        layers += [nn.Linear(sizes[j], sizes[j + 1]), activate()]
     return nn.Sequential(*layers)
 
 
@@ -110,7 +110,6 @@ class MLPActorCritic(nn.Module):
         super().__init__()
 
         self.pi = MLPGaussianActor(obs_dim, act_dim, hidden_sizes, activation)
-        # self.pi = MLPCategoricalActor(obs_dim, act_dim, hidden_sizes, activation)
 
         # build value function
         self.v = MLPCritic(obs_dim, hidden_sizes, activation)

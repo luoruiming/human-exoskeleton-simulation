@@ -1,11 +1,6 @@
 """
     Author: Ruiming Luo
-    Date: 2020.1.15
-    Adapted from:
-     [1] Udacity DRL Nanodegree program's DDPG implementation. (programming style and project framework)
-     https://github.com/udacity/deep-reinforcement-learning/tree/master/ddpg-pendulum
-     [2] Baidu 1st place's solution for NeurIPS2019-Learn-to-Move-Challenge. (algorithm and hyper-parameters)
-     https://github.com/PaddlePaddle/PARL/tree/develop/examples/NeurIPS2019-Learn-to-Move-Challenge
+    Date: 2020.12.12
 """
 
 import numpy as np
@@ -13,16 +8,16 @@ import torch
 from torch.optim import Adam
 import gym
 import time
+import math
 import scipy
 import argparse
 from collections import deque
 
 from ddpg_agent import Agent, ReplayBuffer
-from osim.env import L2M2019Env
-from env_wrapper import FrameSkip, ActionScale, OfficialObs, RewardShaping
-from opensim_util import *
+from osim_env import MyEnv
+from env_wrapper import FrameSkip, ActionScale, OfficialObs
 
-import core
+import ppo_core
 from ppo import PPOBuffer
 from utils.logx import EpochLogger
 from utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
@@ -42,11 +37,12 @@ INIT_POSE = np.array([
     -8.041966456860847323e-01,   # knee extend
     -1.745329251994329478e-01])  # ankle flex
 
-# load the environment
-env = L2M2019Env(difficulty=1, visualize=False)
+ref_traj = np.load('../reference_trajectory.npy')
+print('Successfully load reference trajectory!')
 
-env.change_model(model='2D')
-max_time_limit = 139  # or env.time_limit
+# load the environment
+env = MyEnv(visualize=False, ref_traj=ref_traj)
+max_time_limit = env.time_limit  # or env.time_limit
 print('max_time_limit:', max_time_limit)
 
 # apply RL tricks
@@ -67,9 +63,11 @@ print('Size of each observation', state_size)
 parser = argparse.ArgumentParser()
 parser.add_argument('--train', dest='train', action='store_true', help='train agent locally')
 parser.add_argument('--test', dest='test', action='store_true', help='test agent locally')
+parser.add_argument('--cpu', dest='cpu', type=int, default=1)
+parser.add_argument('--seed', dest='seed', type=int, default=0)
 args = parser.parse_args()
 
-agent = Agent(state_size=state_size, action_size=action_size, random_seed=0)
+# agent = Agent(state_size=state_size, action_size=action_size, random_seed=0)
 
 
 def load_memory(agent, memory_file):
@@ -135,7 +133,6 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=
             action = agent.act(state, add_noise=True)                                # select an action
             action = np.squeeze(action)
             state_, r, done, _ = env.step(action, project=False, obs_as_dict=True)   # send action to environment
-            shaped_r = r if ref_traj is None else reward_shaping(state_, ref_traj[ts])
             state_ = env.get_observation_from_dict(state_)
             agent.step(state, action, shaped_r, state_)                              # accumulate an experiment and learn a step
             score += shaped_r                                                        # update the score
@@ -163,10 +160,17 @@ def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=
     return scores_res
 
 
-def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+def ppo(obs_dim, act_dim, actor_critic=ppo_core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=6144, epochs=1, gamma=0.95, clip_ratio=0.2, pi_lr=3e-4,
-        vf_lr=1e-3, train_pi_iters=10, train_v_iters=10, lamb=0.95, max_ep_len=1000,
-        target_kl=0.01, logger_kwargs=dict(), save_freq=50):
+        vf_lr=1e-3, train_pi_iters=10, train_v_iters=10, lamb=0.95, target_kl=0.01,
+        logger_kwargs=dict(), save_epoch_freq=50, anneal_sample=32000000,
+        time_limit_begin=0.1, time_limit_end=3.0, sample_freq=100):
+
+    def target_path(total_sample_count):
+        t = total_sample_count / anneal_sample
+        lerp = 1.0 if t > 1.0 else t
+        lerp = math.pow(lerp, 4)
+        return ((1 - lerp) * time_limit_begin + lerp * time_limit_end) * sample_freq + 1
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -187,7 +191,7 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
     sync_params(ac)
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.v])
+    var_counts = tuple(ppo_core.count_vars(module) for module in [ac.pi, ac.v])
     logger.log('\nNumber of parameters: \t pi: %d, \t v: %d\n' % var_counts)
 
     # Set up experience buffer
@@ -268,7 +272,6 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
     # Main loop: collect experience in env and update/log each epoch
     epoch = 0
     while True:
-        # collect #local_steps_per_epoch experience samples
         for t in range(local_steps_per_epoch):
             a, v, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
 
@@ -283,9 +286,9 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
             # Update obs
             o = next_o
 
-            timeout = ep_len == max_ep_len
+            timeout = ep_len == target_path(epoch * steps_per_epoch)
             terminal = d or timeout
-            epoch_ended = t == local_steps_per_epoch - 1
+            epoch_ended = (t == local_steps_per_epoch - 1)
 
             if terminal or epoch_ended:
                 if epoch_ended and not terminal:
@@ -302,7 +305,7 @@ def ppo(obs_dim, act_dim, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), se
                 o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
 
         # Save model
-        if epoch % save_freq == 0:
+        if epoch % save_epoch_freq == 0:
             logger.save_state({'env': env}, None)
 
         # Perform PPO update
@@ -334,30 +337,30 @@ if args.train:
     # # load the saved weights
     # agent.restore('saved_weights')
 
-    # print('Successfully load memory!')
-    ref_traj = np.load('../reference_trajectory.npy')
-    print('Successfully load reference trajectory!')
-
     # load pre-collected memory
     # collect_frames(10000, ref_traj)
 
     # train the agent with DDPG and save the result
     # train_scores = ddpg(max_t=max_time_limit, ref_traj=ref_traj)
 
-    mpi_fork(8)  # run parallel code with mpi
+    mpi_fork(args.cpu)  # run parallel code with mpi
     from utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs('ppo', 1)
+    logger_kwargs = setup_logger_kwargs('ppo', args.seed)
     ppo(obs_dim=state_size,
         act_dim=action_size,
-        actor_critic=core.MLPActorCritic,
+        actor_critic=ppo_core.MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[1024] * 2),
         gamma=0.95,
         lamb=0.95,
-        seed=0,
+        seed=args.seed,
         steps_per_epoch=6144,
         epochs=1,
-        max_ep_len=139,
+        time_limit_begin=0.1,
+        time_limit_end=3.0,
+        sample_freq=100,
+        anneal_sample=32000000,
         logger_kwargs=logger_kwargs)
+
     np.save("train_scores.npy", train_scores)
 
     # plot the scores
@@ -395,7 +398,7 @@ elif args.test:
             break
 
     plt.figure()
-    activation_ = scipy.signal.savgol_filter(activation,11,3)
+    activation_ = scipy.signal.savgol_filter(activation, 11, 3)
     plt.plot(activation_)
     plt.title('ADD')
     plt.xlabel('Timestep')
