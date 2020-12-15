@@ -21,6 +21,7 @@ import zlib
 
 DIV_LINE_WIDTH = 80
 
+
 def setup_logger_kwargs(exp_name, seed=None, data_dir=None, datestamp=False):
     """
     Sets up the output_dir for a logger and returns a dict for logger kwargs.

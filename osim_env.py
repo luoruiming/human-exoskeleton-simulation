@@ -519,7 +519,7 @@ class MyEnv(OsimEnv):
         QQ[1] = 0 * np.pi / 180  # roll
         QQ[2] = 0 * np.pi / 180  # yaw
         QQDot[3] = init_pose[0]  # forward speed
-        QQDot[5] = init_pose[1]  # forward speed
+        QQDot[5] = init_pose[1]  # rightward speed
         QQ[4] = init_pose[2]     # pelvis height
         QQ[0] = -init_pose[3]    # trunk lean: (+) backward
         QQ[7] = -init_pose[4]    # right hip abduct

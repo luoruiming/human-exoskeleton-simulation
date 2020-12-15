@@ -16,6 +16,7 @@ def setup_pytorch_for_mpi():
     fair_num_threads = max(int(torch.get_num_threads() / num_procs()), 1)
     torch.set_num_threads(fair_num_threads)
 
+
 def mpi_avg_grads(module):
     if num_procs() == 1:
         return
@@ -24,6 +25,7 @@ def mpi_avg_grads(module):
         p_grad_numpy = p.grad.numpy()
         avg_p_grad = mpi_avg(p.grad)
         p_grad_numpy[:] = avg_p_grad[:]
+
 
 def sync_params(module):
     if num_procs() == 1:

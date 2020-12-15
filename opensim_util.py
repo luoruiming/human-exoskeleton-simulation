@@ -3,110 +3,6 @@ import matplotlib.pyplot as plt
 from scipy import signal, interpolate
 import math
 
-# each frame: [pelvis(3), joint_angle(8), joint_vel(8), muscle_force(22), fiber_length(22), grf_l(1), grf_r(1)]
-state_idx = {'pelvis_speed': 0, 'pelvis_tilt': 1, 'pelvis_ty': 2, 'hip_flexion_r': 3, 'hip_adduction_r': 4, 'knee_angle_r': 5, 'ankle_angle_r': 6,
-             'hip_flexion_l': 7, 'hip_adduction_l': 8, 'knee_angle_l': 9, 'ankle_angle_l': 10, 'hip_flexion_r_v': 11, 'hip_adduction_r_v': 12,
-             'knee_angle_r_v': 13, 'ankle_angle_r_v': 14, 'hip_flexion_l_v': 15, 'hip_adduction_l_v': 16, 'knee_angle_l_v': 17, 'ankle_angle_l_v': 18,
-             'abd_r_f': 19, 'add_r_f': 20, 'hamstrings_r_f': 21, 'bifemsh_r_f': 22, 'glut_max_r_f': 23, 'iliopsoas_r_f': 24, 'rect_fem_r_f': 25,
-             'vasti_r_f': 26, 'gastroc_r_f': 27, 'soleus_r_f': 28, 'tib_ant_r_f': 29, 'abd_l_f': 30, 'add_l_f': 31, 'hamstrings_l_f': 32, 'bifemsh_l_f': 33,
-             'glut_max_l_f': 34, 'iliopsoas_l_f': 35, 'rect_fem_l_f': 36, 'vasti_l_f': 37, 'gastroc_l_f': 38, 'soleus_l_f': 39, 'tib_ant_l_f': 40,
-             'abd_r_l': 41, 'add_r_l': 42, 'hamstrings_r_l': 43, 'bifemsh_r_l': 44, 'glut_max_r_l': 45, 'iliopsoas_r_l': 46, 'rect_fem_r_l': 47,
-             'vasti_r_l': 48, 'gastroc_r_l': 49, 'soleus_r_l': 50, 'tib_ant_r_l': 51, 'abd_l_l': 52, 'add_l_l': 53, 'hamstrings_l_l': 54, 'bifemsh_l_l': 55,
-             'glut_max_l_l': 56, 'iliopsoas_l_l': 57, 'rect_fem_l_l': 58, 'vasti_l_l': 59, 'gastroc_l_l': 60, 'soleus_l_l': 61, 'tib_ant_l_l': 62,
-             'ground_force_1_vy': 63, 'ground_force_2_vy': 64}
-
-
-def reward_shaping(state_, ref_traj):
-    pelvis_err, angle_err, angle_vel_err, force_err, fiber_err, grf_err = [], [], [], [], [], []
-    w_angle, w_angle_vel, w_pelvis = 0.4, 0.3, 0.3
-    w_force, w_fiber, w_grf = 0.3, 0.3, 0.4
-
-    assert w_angle + w_angle_vel + w_pelvis == 1.0 and w_force + w_fiber + w_grf == 1.0
-
-    pelvis_err.append(ref_traj[state_idx['pelvis_speed']] - state_['pelvis']['vel'][0])
-    pelvis_err.append(ref_traj[state_idx['pelvis_tilt']] - state_['pelvis']['pitch'])
-    pelvis_err.append(ref_traj[state_idx['pelvis_ty']] - state_['pelvis']['height'])
-
-    angle_err.append(ref_traj[state_idx['hip_flexion_r']] - state_['r_leg']['joint']['hip'])
-    angle_err.append(ref_traj[state_idx['hip_adduction_r']] - state_['r_leg']['joint']['hip_abd'])
-    angle_err.append(ref_traj[state_idx['knee_angle_r']] - state_['r_leg']['joint']['knee'])
-    angle_err.append(ref_traj[state_idx['ankle_angle_r']] - state_['r_leg']['joint']['ankle'])
-    angle_err.append(ref_traj[state_idx['hip_flexion_l']] - state_['l_leg']['joint']['hip'])
-    angle_err.append(ref_traj[state_idx['hip_adduction_l']] - state_['l_leg']['joint']['hip_abd'])
-    angle_err.append(ref_traj[state_idx['knee_angle_l']] - state_['l_leg']['joint']['knee'])
-    angle_err.append(ref_traj[state_idx['ankle_angle_l']] - state_['l_leg']['joint']['ankle'])
-
-    angle_vel_err.append(ref_traj[state_idx['hip_flexion_r_v']] - state_['r_leg']['d_joint']['hip'])
-    angle_vel_err.append(ref_traj[state_idx['hip_adduction_r_v']] - state_['r_leg']['d_joint']['hip_abd'])
-    angle_vel_err.append(ref_traj[state_idx['knee_angle_r_v']] - state_['r_leg']['d_joint']['knee'])
-    angle_vel_err.append(ref_traj[state_idx['ankle_angle_r_v']] - state_['r_leg']['d_joint']['ankle'])
-    angle_vel_err.append(ref_traj[state_idx['hip_flexion_l_v']] - state_['l_leg']['d_joint']['hip'])
-    angle_vel_err.append(ref_traj[state_idx['hip_adduction_l_v']] - state_['l_leg']['d_joint']['hip_abd'])
-    angle_vel_err.append(ref_traj[state_idx['knee_angle_l_v']] - state_['l_leg']['d_joint']['knee'])
-    angle_vel_err.append(ref_traj[state_idx['ankle_angle_l_v']] - state_['l_leg']['d_joint']['ankle'])
-
-    force_err.append(ref_traj[state_idx['abd_r_f']] - state_['r_leg']['HAB']['f'])
-    force_err.append(ref_traj[state_idx['add_r_f']] - state_['r_leg']['HAD']['f'])
-    force_err.append(ref_traj[state_idx['hamstrings_r_f']] - state_['r_leg']['HAM']['f'])
-    force_err.append(ref_traj[state_idx['bifemsh_r_f']] - state_['r_leg']['BFSH']['f'])
-    force_err.append(ref_traj[state_idx['glut_max_r_f']] - state_['r_leg']['GLU']['f'])
-    force_err.append(ref_traj[state_idx['iliopsoas_r_f']] - state_['r_leg']['HFL']['f'])
-    force_err.append(ref_traj[state_idx['rect_fem_r_f']] - state_['r_leg']['RF']['f'])
-    force_err.append(ref_traj[state_idx['vasti_r_f']] - state_['r_leg']['VAS']['f'])
-    force_err.append(ref_traj[state_idx['gastroc_r_f']] - state_['r_leg']['GAS']['f'])
-    force_err.append(ref_traj[state_idx['soleus_r_f']] - state_['r_leg']['SOL']['f'])
-    force_err.append(ref_traj[state_idx['tib_ant_r_f']] - state_['r_leg']['TA']['f'])
-    force_err.append(ref_traj[state_idx['abd_l_f']] - state_['l_leg']['HAB']['f'])
-    force_err.append(ref_traj[state_idx['add_l_f']] - state_['l_leg']['HAD']['f'])
-    force_err.append(ref_traj[state_idx['hamstrings_l_f']] - state_['l_leg']['HAM']['f'])
-    force_err.append(ref_traj[state_idx['bifemsh_l_f']] - state_['l_leg']['BFSH']['f'])
-    force_err.append(ref_traj[state_idx['glut_max_l_f']] - state_['l_leg']['GLU']['f'])
-    force_err.append(ref_traj[state_idx['iliopsoas_l_f']] - state_['l_leg']['HFL']['f'])
-    force_err.append(ref_traj[state_idx['rect_fem_l_f']] - state_['l_leg']['RF']['f'])
-    force_err.append(ref_traj[state_idx['vasti_l_f']] - state_['l_leg']['VAS']['f'])
-    force_err.append(ref_traj[state_idx['gastroc_l_f']] - state_['l_leg']['GAS']['f'])
-    force_err.append(ref_traj[state_idx['soleus_l_f']] - state_['l_leg']['SOL']['f'])
-    force_err.append(ref_traj[state_idx['tib_ant_l_f']] - state_['l_leg']['TA']['f'])
-
-    fiber_err.append(ref_traj[state_idx['abd_r_l']] - state_['r_leg']['HAB']['l'])
-    fiber_err.append(ref_traj[state_idx['add_r_l']] - state_['r_leg']['HAD']['l'])
-    fiber_err.append(ref_traj[state_idx['hamstrings_r_l']] - state_['r_leg']['HAM']['l'])
-    fiber_err.append(ref_traj[state_idx['bifemsh_r_l']] - state_['r_leg']['BFSH']['l'])
-    fiber_err.append(ref_traj[state_idx['glut_max_r_l']] - state_['r_leg']['GLU']['l'])
-    fiber_err.append(ref_traj[state_idx['iliopsoas_r_l']] - state_['r_leg']['HFL']['l'])
-    fiber_err.append(ref_traj[state_idx['rect_fem_r_l']] - state_['r_leg']['RF']['l'])
-    fiber_err.append(ref_traj[state_idx['vasti_r_l']] - state_['r_leg']['VAS']['l'])
-    fiber_err.append(ref_traj[state_idx['gastroc_r_l']] - state_['r_leg']['GAS']['l'])
-    fiber_err.append(ref_traj[state_idx['soleus_r_l']] - state_['r_leg']['SOL']['l'])
-    fiber_err.append(ref_traj[state_idx['tib_ant_r_l']] - state_['r_leg']['TA']['l'])
-    fiber_err.append(ref_traj[state_idx['abd_l_l']] - state_['l_leg']['HAB']['l'])
-    fiber_err.append(ref_traj[state_idx['add_l_l']] - state_['l_leg']['HAD']['l'])
-    fiber_err.append(ref_traj[state_idx['hamstrings_l_l']] - state_['l_leg']['HAM']['l'])
-    fiber_err.append(ref_traj[state_idx['bifemsh_l_l']] - state_['l_leg']['BFSH']['l'])
-    fiber_err.append(ref_traj[state_idx['glut_max_l_l']] - state_['l_leg']['GLU']['l'])
-    fiber_err.append(ref_traj[state_idx['iliopsoas_l_l']] - state_['l_leg']['HFL']['l'])
-    fiber_err.append(ref_traj[state_idx['rect_fem_l_l']] - state_['l_leg']['RF']['l'])
-    fiber_err.append(ref_traj[state_idx['vasti_l_l']] - state_['l_leg']['VAS']['l'])
-    fiber_err.append(ref_traj[state_idx['gastroc_l_l']] - state_['l_leg']['GAS']['l'])
-    fiber_err.append(ref_traj[state_idx['soleus_l_l']] - state_['l_leg']['SOL']['l'])
-    fiber_err.append(ref_traj[state_idx['tib_ant_l_l']] - state_['l_leg']['TA']['l'])
-
-    grf_err.append(ref_traj[state_idx['ground_force_1_vy']] - state_['l_leg']['ground_reaction_forces'][2])
-    grf_err.append(ref_traj[state_idx['ground_force_2_vy']] - state_['r_leg']['ground_reaction_forces'][2])
-
-    r_kinematic, r_dynamic = 0, 0
-    r_kinematic += w_angle * np.exp(-np.linalg.norm(angle_err))
-    r_kinematic += w_angle_vel * np.exp(-np.linalg.norm(angle_vel_err))
-    r_kinematic += w_pelvis * np.exp(-np.linalg.norm(pelvis_err))
-
-    r_dynamic += w_force * np.exp(-np.linalg.norm(force_err))
-    r_dynamic += w_fiber * np.exp(-np.linalg.norm(fiber_err))
-    r_dynamic += w_grf * np.exp(-np.linalg.norm(grf_err))
-
-    # print(np.linalg.norm(pelvis_err), np.linalg.norm(angle_err), np.linalg.norm(angle_vel_err),
-    # np.linalg.norm(activation_err), np.linalg.norm(fiber_err), np.linalg.norm(grf_err), 'r=', r)
-    return 0.5 * r_kinematic + 0.5 * r_dynamic
-
 
 def lowpass_grf(original_file, fe, output_file):
     with open(original_file, 'r') as fin:
@@ -233,6 +129,7 @@ def load_cmc(filename):  # load gait14dof22musc_walk1_states.sto and subsample a
         print('nRows:', mat.shape[0], '\tnColumns:', mat.shape[1])
         return mat, title_idx
 
+
 def print_activation_cmc(filename, muscle_name):  # load gait14dof22musc_walk1_states.sto and print certain muscle's value
     with open(filename, 'r') as f:
         for _ in range(6):
@@ -250,6 +147,7 @@ def print_activation_cmc(filename, muscle_name):  # load gait14dof22musc_walk1_s
                     res.append(eval(row_list[idx]))
                     
         return res
+
 
 def get_ref_traj(cmc_file, grf_file, muscle_file):
     grf_mat, grf_title_idx = load_grf(grf_file)
@@ -302,6 +200,7 @@ def main():
     plt.ylabel('Muscle Activation')
     plt.plot(add_r)
     plt.show()
+
 
 if __name__ == '__main__':
     main()

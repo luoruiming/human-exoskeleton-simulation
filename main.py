@@ -1,6 +1,6 @@
 """
     Author: Ruiming Luo
-    Date: 2020.12.12
+    Date: 2020.12.15
 """
 
 import numpy as np
@@ -11,42 +11,24 @@ import time
 import math
 import scipy
 import argparse
-from collections import deque
 
-from ddpg_agent import Agent, ReplayBuffer
 from osim_env import MyEnv
 from env_wrapper import FrameSkip, ActionScale, OfficialObs
-
 import ppo_core
 from ppo import PPOBuffer
 from utils.logx import EpochLogger
 from utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
 from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
 
-INIT_POSE = np.array([
-    1.699999999999999956e+00,    # forward speed
-    .5,                          # rightward speed
-    9.023245653983965608e-01,    # pelvis height
-    2.012303881285582852e-01,    # trunk lean
-    0 * np.pi / 180,             # [right] hip adduct
-    -6.952390849304798115e-01,   # hip flex
-    -3.231075259785813891e-01,   # knee extend
-    1.709011708233401095e-01,    # ankle flex
-    0 * np.pi / 180,             # [left] hip adduct
-    -5.282323914341899296e-02,   # hip flex
-    -8.041966456860847323e-01,   # knee extend
-    -1.745329251994329478e-01])  # ankle flex
 
 ref_traj = np.load('../reference_trajectory.npy')
 print('Successfully load reference trajectory!')
 
 # load the environment
 env = MyEnv(visualize=False, ref_traj=ref_traj)
-max_time_limit = env.time_limit  # or env.time_limit
+max_time_limit = env.time_limit  
 print('max_time_limit:', max_time_limit)
 
-# apply RL tricks
-# env = RewardShaping(env)  # reward shaping
 env = OfficialObs(env, max_time_limit)  # reshape observation
 
 # size of each action
@@ -54,7 +36,7 @@ action_size = env.get_action_space_size()
 print('Size of each action:', action_size)
 
 # reset the environment
-obs = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)
+obs = env.reset(project=False, obs_as_dict=False)
 state_size = obs.size
 print('Size of each observation', state_size)
 
@@ -66,8 +48,6 @@ parser.add_argument('--test', dest='test', action='store_true', help='test agent
 parser.add_argument('--cpu', dest='cpu', type=int, default=1)
 parser.add_argument('--seed', dest='seed', type=int, default=0)
 args = parser.parse_args()
-
-# agent = Agent(state_size=state_size, action_size=action_size, random_seed=0)
 
 
 def load_memory(agent, memory_file):
@@ -91,7 +71,7 @@ def collect_frames(n_frame, ref_traj):
         start_id = np.random.randint(ref_traj.shape[0])
         init_pose = np.array([
             ref_traj[start_id][state_idx['pelvis_speed']],     # forward speed
-            .5,                                                # rightward speed
+            0,                                                 # rightward speed
             ref_traj[start_id][state_idx['pelvis_ty']],        # pelvis height
             ref_traj[start_id][state_idx['pelvis_tilt']],      # trunk lean
             ref_traj[start_id][state_idx['hip_adduction_r']],  # [right] hip adduct
@@ -103,7 +83,7 @@ def collect_frames(n_frame, ref_traj):
             ref_traj[start_id][state_idx['knee_angle_l']],     # knee extend
             ref_traj[start_id][state_idx['ankle_angle_l']]])   # ankle flex
 
-        env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)
+        env.reset(project=False, obs_as_dict=False)
         while True:
             action = np.random.rand(action_size)
             action = np.clip(action, 0, 1)
@@ -119,45 +99,6 @@ def collect_frames(n_frame, ref_traj):
                 return memory
             if done:
                 break
-
-
-def ddpg(n_episodes=3000, max_t=max_time_limit, solved_score=100.0, print_every=50, ref_traj=None):
-    scores_window = deque(maxlen=print_every)
-    scores_res = []
-    highest_score = -float('inf')
-    for i_episode in range(1, n_episodes + 1):
-        state = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)     # reset the environment
-        score, ts = 0, 0                                                             # initialize the score
-        agent.reset()
-        while ts < max_time_limit:
-            action = agent.act(state, add_noise=True)                                # select an action
-            action = np.squeeze(action)
-            state_, r, done, _ = env.step(action, project=False, obs_as_dict=True)   # send action to environment
-            state_ = env.get_observation_from_dict(state_)
-            agent.step(state, action, shaped_r, state_)                              # accumulate an experiment and learn a step
-            score += shaped_r                                                        # update the score
-            state = state_                                                           # roll over states to next time step
-            if done:                                                                 # exit loop if episode finished
-                break
-            ts += 1
-        scores_window.append(score)
-        scores_res.append(score)
-        print('Episode {}\tTimestep:{}\tAverage Score: {:.2f}'.format(i_episode, ts, np.mean(scores_window)))
-
-        if highest_score < np.mean(scores_window):
-            highest_score = np.mean(scores_window)
-            torch.save(agent.actor_local.state_dict(), 'saved_weights/checkpoint_actor.pth')
-            torch.save(agent.critic_local.state_dict(), 'saved_weights/checkpoint_critic.pth')
-            print('Networks saved!')
-
-        if i_episode % print_every == 0:
-            np.save('scores_res.npy', scores_res)
-            print('scores saved!')
-            # print('\rEpisode {}\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
-        if np.mean(scores_window) >= solved_score:
-            print('Environment solved in {} episodes!\tAverage Score: {:.2f}'.format(i_episode, np.mean(scores_window)))
-            break
-    return scores_res
 
 
 def ppo(obs_dim, act_dim, actor_critic=ppo_core.MLPActorCritic, ac_kwargs=dict(), seed=0,
@@ -267,7 +208,7 @@ def ppo(obs_dim, act_dim, actor_critic=ppo_core.MLPActorCritic, ac_kwargs=dict()
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
+    o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False), 0, 0
 
     # Main loop: collect experience in env and update/log each epoch
     epoch = 0
@@ -302,7 +243,7 @@ def ppo(obs_dim, act_dim, actor_critic=ppo_core.MLPActorCritic, ac_kwargs=dict()
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE), 0, 0
+                o, ep_ret, ep_len = env.reset(project=False, obs_as_dict=False), 0, 0
 
         # Save model
         if epoch % save_epoch_freq == 0:
@@ -356,21 +297,10 @@ if args.train:
         steps_per_epoch=6144,
         epochs=1,
         time_limit_begin=0.1,
-        time_limit_end=3.0,
+        time_limit_end=2.0,
         sample_freq=100,
         anneal_sample=32000000,
         logger_kwargs=logger_kwargs)
-
-    np.save("train_scores.npy", train_scores)
-
-    # plot the scores
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    plt.plot(np.arange(len(train_scores)), train_scores)
-    plt.ylabel('Score')
-    plt.xlabel('Episode')
-    plt.savefig('pic/reward_curve.png')
-    plt.show()
 
 elif args.test:
     # load the saved weights
@@ -378,7 +308,7 @@ elif args.test:
     agent.critic_local.load_state_dict(torch.load('../saved_weights/checkpoint_critic.pth', map_location='cpu'))
     print('Successfully load network weights!')
 
-    state = env.reset(project=False, obs_as_dict=False, init_pose=INIT_POSE)
+    state = env.reset(project=False, obs_as_dict=False)
     scores = 0
 
     activation = np.array([])
