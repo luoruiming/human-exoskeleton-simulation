@@ -410,18 +410,18 @@ class MyEnv(OsimEnv):
     #    or abd, add, hamstrings, bifemsh, glut_max, iliopsoas, rect_fem, vasti, gastroc, soleus, tib_ant
 
     INIT_POSE = np.array([
-        0,  # forward speed
-        0,  # rightward speed
-        0.94,  # pelvis height
-        0 * np.pi / 180,  # trunk lean
-        0 * np.pi / 180,  # [right] hip adduct
-        0 * np.pi / 180,  # hip flex
-        0 * np.pi / 180,  # knee extend
-        0 * np.pi / 180,  # ankle flex
-        0 * np.pi / 180,  # [left] hip adduct
-        0 * np.pi / 180,  # hip flex
-        0 * np.pi / 180,  # knee extend
-        0 * np.pi / 180])  # ankle flex
+        0,                # forward speed
+        0,                # rightward speed
+        0.94,             # pelvis height
+        0,                # trunk lean
+        0,                # [right] hip adduct
+        0.45,             # hip flex
+        0.25,             # knee extend
+        0,                # ankle flex
+        0,                # [left] hip adduct
+        -0.15,            # hip flex
+        -0.25,            # knee extend
+        0.4])             # ankle flex
 
     obs_body_space = np.array([[-1.0] * 97, [1.0] * 97])
     obs_body_space[:, 0] = [0, 3]  # pelvis height
@@ -498,7 +498,6 @@ class MyEnv(OsimEnv):
     def reset(self, project=True, init_pose=None, obs_as_dict=True):
         self.t = 0
         self.mimic_step = 0
-        self.init_reward()
 
         self.footstep['n'] = 0
         self.footstep['new'] = False
@@ -718,90 +717,10 @@ class MyEnv(OsimEnv):
         d = super(MyEnv, self).get_state_desc()
         return d
 
-    def init_reward(self):
-        self.init_reward_1()
-
-    def init_reward_1(self):
-        self.d_reward = dict()
-
-        self.d_reward['weight'] = {}
-        self.d_reward['weight']['footstep'] = 10
-        self.d_reward['weight']['effort'] = 1
-        self.d_reward['weight']['v_tgt'] = 1
-        self.d_reward['weight']['v_tgt_R2'] = 3
-
-        self.d_reward['alive'] = 0.1
-        self.d_reward['effort'] = 0
-
-        self.d_reward['footstep'] = {}
-        self.d_reward['footstep']['effort'] = 0
-        self.d_reward['footstep']['del_t'] = 0
-        self.d_reward['footstep']['del_v'] = 0
 
     def get_reward(self):
-        if self.ref_traj is None:
-            return self.get_reward_1()
+        assert self.ref_traj is not None, "ref_traj is None!"
         return self.get_reward_2(self.ref_traj[self.mimic_step % self.ref_traj.shape[0]])
-
-    def get_reward_1(self):
-        state_desc = self.get_state_desc()
-        if not self.get_prev_state_desc():
-            return 0
-
-        reward = 0
-        dt = self.osim_model.stepsize
-
-        # alive reward
-        # should be large enough to search for 'success' solutions (alive to the end) first
-        reward += self.d_reward['alive']
-
-        # effort ~ muscle fatigue ~ (muscle activation)^2
-        ACT2 = 0
-        for muscle in sorted(state_desc['muscles'].keys()):
-            ACT2 += np.square(state_desc['muscles'][muscle]['activation'])
-        self.d_reward['effort'] += ACT2 * dt
-        self.d_reward['footstep']['effort'] += ACT2 * dt
-
-        self.d_reward['footstep']['del_t'] += dt
-
-        # reward from velocity (penalize from deviating from v_tgt)
-
-        p_body = [state_desc['body_pos']['pelvis'][0], -state_desc['body_pos']['pelvis'][2]]
-        v_body = [state_desc['body_vel']['pelvis'][0], -state_desc['body_vel']['pelvis'][2]]
-
-        self.d_reward['footstep']['del_v'] += (v_body - v_tgt) * dt
-
-        # footstep reward (when made a new step)
-        if self.footstep['new']:
-            # footstep reward: so that solution does not avoid making footsteps
-            # scaled by del_t, so that solution does not get higher rewards by making unnecessary (small) steps
-            reward_footstep_0 = self.d_reward['weight']['footstep'] * self.d_reward['footstep']['del_t']
-
-            # deviation from target velocity
-            # the average velocity a step (instead of instantaneous velocity) is used
-            # as velocity fluctuates within a step in normal human walking
-            # reward_footstep_v = -self.reward_w['v_tgt']*(self.footstep['del_vx']**2)
-            reward_footstep_v = -self.d_reward['weight']['v_tgt'] * np.linalg.norm(
-                self.d_reward['footstep']['del_v']) / self.LENGTH0
-
-            # penalize effort
-            reward_footstep_e = -self.d_reward['weight']['effort'] * self.d_reward['footstep']['effort']
-
-            self.d_reward['footstep']['del_t'] = 0
-            self.d_reward['footstep']['del_v'] = 0
-            self.d_reward['footstep']['effort'] = 0
-
-            reward += reward_footstep_0 + reward_footstep_v + reward_footstep_e
-
-        # success bonus
-        if not self.is_done() and (
-            self.osim_model.istep >= self.spec.timestep_limit):  # and self.failure_mode is 'success':
-            # retrieve reward (i.e. do not penalize for the simulation terminating in a middle of a step)
-            reward_footstep_0 = self.d_reward['weight']['footstep'] * self.d_reward['footstep']['del_t']
-            # reward += reward_footstep_0 + 100
-            reward += reward_footstep_0 + 10
-
-        return reward
 
     def get_reward_2(self, ref_traj):
         # each frame: [pelvis(3), joint_angle(8), joint_vel(8), muscle_force(22), fiber_length(22), grf_l(1), grf_r(1)]
